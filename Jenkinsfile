@@ -2,89 +2,49 @@ pipeline {
 agent any
  
 environment {
-IMAGE_NAME = "python-app"
-IMAGE_TAG = "${BUILD_NUMBER}"
-REGISTRY = "docker.io"
-REPO = "yourdockerhubuser/python-app"
+APP_NAME = "python-app"
+BUILD_TAG = "${BUILD_NUMBER}"
 }
  
 stages {
  
 stage('Checkout') {
 steps {
-git branch: 'main',
-url: 'https://github.com/your-org/python-app.git'
+checkout scm
 }
 }
  
-stage('Python Test') {
+stage('Build Docker Image') {
 steps {
-sh '''
-python3 -m venv venv
-. venv/bin/activate
-pip install -r requirements.txt
-pytest || true
-'''
-}
-}
- 
-stage('Build Image') {
-steps {
-sh '''
+sh """
 docker build \
--t ${REPO}:${IMAGE_TAG} .
-'''
+-t ${APP_NAME}:${BUILD_TAG} \
+-t ${APP_NAME}:latest .
+"""
 }
 }
  
-stage('Push Image') {
+stage('Deploy Container') {
 steps {
-withCredentials([
-usernamePassword(
-credentialsId: 'dockerhub-creds',
-usernameVariable: 'DOCKER_USER',
-passwordVariable: 'DOCKER_PASS'
-)
-]) {
-sh '''
-echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
- 
-docker push ${REPO}:${IMAGE_TAG}
- 
-docker tag ${REPO}:${IMAGE_TAG} ${REPO}:latest
-docker push ${REPO}:latest
-'''
-}
-}
-}
- 
-stage('Deploy') {
-steps {
-sh '''
-docker stop python-app || true
-docker rm python-app || true
+sh """
+docker stop ${APP_NAME} || true
+docker rm ${APP_NAME} || true
  
 docker run -d \
---name python-app \
+--name ${APP_NAME} \
 --restart unless-stopped \
 -p 8000:8000 \
-${REPO}:${IMAGE_TAG}
-'''
+--memory=512m \
+--cpus=1 \
+${APP_NAME}:${BUILD_TAG}
+"""
 }
 }
 }
  
 post {
 always {
-sh 'docker image prune -f'
-}
- 
-success {
-echo 'Deployment Successful'
-}
- 
-failure {
-echo 'Deployment Failed'
+sh 'docker image prune -f || true'
 }
 }
 }
